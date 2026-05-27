@@ -316,8 +316,17 @@ function doScan() {
       </div>
     `;
 
+    // 【核心修復】使用 Chart.js 官方權威手段：直接尋找該 Canvas 上掛載的任何舊圖表並強制銷毀
+    var existingChart = Chart.getChart("candle-main"); 
+    if (existingChart) { existingChart.destroy(); }
+    
+    var existingRsi = Chart.getChart("rsi-main");
+    if (existingRsi) { existingRsi.destroy(); }
+    
+    var existingMacd = Chart.getChart("macd-main");
+    if (existingMacd) { existingMacd.destroy(); }
+
     // 1. 繪製標準日級別 K 線蠟燭圖 (Candlestick)
-    destroyChart('main');
     var candleData = data.map(d => ({ x: luxon.DateTime.fromISO(d.date).valueOf(), o: d.open, h: d.high, l: d.low, c: d.close }));
     
     CH['main'] = new Chart(document.getElementById('candle-main').getContext('2d'), {
@@ -325,7 +334,7 @@ function doScan() {
       data: { datasets: [{
         label: stock + ' 歷史日K線',
         data: candleData,
-        color: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }, // 綠漲紅跌符合美股規範
+        color: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }, 
         borderColor: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }
       }]},
       options: {
@@ -339,7 +348,6 @@ function doScan() {
     });
 
     // 2. RSI 圖表
-    destroyChart('rsi');
     CH['rsi'] = new Chart(document.getElementById('rsi-main'), {
       type: 'line',
       data: { labels: labels, datasets: [{ data: calcRSI(closes, 14), borderColor: '#00b0ff', borderWidth: 1.5, pointRadius: 0, fill: false }] },
@@ -351,7 +359,6 @@ function doScan() {
     });
 
     // 3. MACD 圖表
-    destroyChart('macd');
     var m = calcMACD(closes);
     CH['macd'] = new Chart(document.getElementById('macd-main'), {
       type: 'bar',
