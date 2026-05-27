@@ -301,11 +301,25 @@ function doScan() {
   if(stock === 'CUSTOM') stock = document.getElementById('custom-sym').value.toUpperCase() || 'TSLA';
   var days = parseInt(document.getElementById('sel-days').value);
   
+  // 【超前防禦】在發送 API 請求「之前」，立刻強制銷毀當前畫布上的所有舊圖表實例
+  var existingChart = Chart.getChart("candle-main"); if (existingChart) { existingChart.destroy(); }
+  var existingRsi   = Chart.getChart("rsi-main");    if (existingRsi)   { existingRsi.destroy(); }
+  var existingMacd  = Chart.getChart("macd-main");   if (existingMacd)  { existingMacd.destroy(); }
+
+  // 顯示載入中動畫（防止使用者連續點擊）
+  document.getElementById('sigbox').innerHTML = `<div class="loading-bar"><span class="spin">⟳</span>正在調取 ${stock} 數據中...</div>`;
+
+  // 開始讀取資料（Finnhub API 或模擬數據）
   loadData(stock, days, function(data, mode) {
+    // 再次確保安全：資料回傳的瞬間再清一次，雙重保險
+    var reCheckChart = Chart.getChart("candle-main"); if (reCheckChart) { reCheckChart.destroy(); }
+    var reCheckRsi   = Chart.getChart("rsi-main");    if (reCheckRsi)   { reCheckRsi.destroy(); }
+    var reCheckMacd  = Chart.getChart("macd-main");   if (reCheckMacd)  { reCheckMacd.destroy(); }
+
     var closes = data.map(d => d.close);
     var labels = data.map(d => d.date);
     
-    // 頂部資訊看板
+    // 更新頂部資訊看板
     var curP = closes[closes.length-1], preP = closes[closes.length-2];
     var chg = ((curP - preP)/preP*100).toFixed(2);
     document.getElementById('sigbox').innerHTML = `
@@ -318,18 +332,11 @@ function doScan() {
       </div>
     `;
 
-    // 【核心修復】使用 Chart.js 官方權威手段：直接尋找該 Canvas 上掛載的任何舊圖表並強制銷毀
-    var existingChart = Chart.getChart("candle-main"); 
-    if (existingChart) { existingChart.destroy(); }
-    
-    var existingRsi = Chart.getChart("rsi-main");
-    if (existingRsi) { existingRsi.destroy(); }
-    
-    var existingMacd = Chart.getChart("macd-main");
-    if (existingMacd) { existingMacd.destroy(); }
-
     // 1. 繪製標準日級別 K 線蠟燭圖 (Candlestick)
-    var candleData = data.map(d => ({ x: luxon.DateTime.fromISO(d.date).valueOf(), o: d.open, h: d.high, l: d.low, c: d.close }));
+    var candleData = data.map(d => ({ 
+      x: luxon.DateTime.fromISO(d.date).valueOf(), 
+      o: d.open, h: d.high, l: d.low, c: d.close 
+    }));
     
     CH['main'] = new Chart(document.getElementById('candle-main').getContext('2d'), {
       type: 'candlestick',
