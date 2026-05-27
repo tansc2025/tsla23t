@@ -1,2 +1,2 @@
 # tsla23t
-Trading System 
+Trading System was designed by tansc
