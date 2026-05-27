@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>TSLA23T 交易規則系統 v3 (K線修復版)</title>
+<script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.0/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.umd.min.js"></script>
+
+<style>
+:root{--bg:#03060d;--bg2:#070d1a;--bg3:#0c1525;--border:#1a2e44;--border2:#243548;--gold:#f5c842;--green:#00e676;--red:#ff1744;--blue:#00b0ff;--purple:#ce93d8;--text:#e0eaf5;--text2:#8aafcc;--text3:#3a6080}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:Arial,sans-serif;min-height:100vh;overflow-x:hidden;font-size:13px}
+#splash{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;align-items:center;justify-content:center;transition:opacity .7s}
+#splash.out{opacity:0;pointer-events:none}
+.sg{position:absolute;inset:0;background-image:linear-gradient(rgba(0,176,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(0,176,255,.04) 1px,transparent 1px);background-size:40px 40px}
+.sglow{position:absolute;width:400px;height:400px;border-radius:50%;background:radial-gradient(circle,rgba(245,200,66,.13),transparent 70%);top:50%;left:50%;transform:translate(-50%,-50%);animation:gp 3s ease-in-out infinite}
+@keyframes gp{0%,100%{transform:translate(-50%,-50%) scale(1);opacity:.6}50%{transform:translate(-50%,-50%) scale(1.15);opacity:1}}
+.scont{position:relative;text-align:center;padding:20px}
+.slogo{font-size:clamp(36px,8vw,68px);font-weight:900;letter-spacing:6px;background:linear-gradient(135deg,#f5c842,#fff8e1,#f5c842,#b8960c);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.ssub{font-size:12px;letter-spacing:4px;color:var(--text3);margin-bottom:16px}
+.sauth{font-size:11px;color:var(--gold);letter-spacing:3px;margin-bottom:24px;border:1px solid rgba(245,200,66,.3);padding:5px 18px;display:inline-block;border-radius:2px}
+.schips{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;margin-bottom:28px}
+.chip{font-size:10px;letter-spacing:1px;padding:3px 10px;border-radius:2px;border:1px solid}
+.chip.r{border-color:rgba(255,23,68,.4);color:var(--red);background:rgba(255,23,68,.06)}
+.chip.g{border-color:rgba(0,230,118,.4);color:var(--green);background:rgba(0,230,118,.06)}
+.chip.y{border-color:rgba(245,200,66,.4);color:var(--gold);background:rgba(245,200,66,.06)}
+.sbtn{font-size:12px;letter-spacing:3px;background:linear-gradient(135deg,#b8960c,#f5c842,#b8960c);color:#030608;font-weight:700;padding:12px 40px;border:none;cursor:pointer;border-radius:2px;box-shadow:0 0 25px rgba(245,200,66,.4);transition:all .3s}
+.sbtn:hover{transform:scale(1.04)}
+.api-wrap{margin-bottom:24px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.api-wrap label{font-size:10px;letter-spacing:2px;color:var(--text3)}
+.api-input{background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:8px 14px;border-radius:4px;width:260px;text-align:center;letter-spacing:1px}
+.api-input:focus{outline:none;border-color:var(--gold)}
+.api-note{font-size:10px;color:var(--text3);letter-spacing:.5px}
+.api-note a{color:var(--gold);text-decoration:none}
+#app{display:none}
+#app.show{display:block}
+#topbar{position:sticky;top:0;z-index:200;background:rgba(3,6,13,.97);border-bottom:1px solid var(--border);padding:8px 14px;display:flex;align-items:center;justify-content:space-between}
+.brand{font-size:13px;font-weight:700;letter-spacing:3px;background:linear-gradient(90deg,var(--gold),#fff8e1);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.bsub{font-size:9px;letter-spacing:2px;color:var(--text3);margin-top:1px}
+.ck{font-size:12px;color:var(--blue);letter-spacing:1px;text-align:right}
+.ckd{font-size:9px;color:var(--text3);margin-top:2px;text-align:right}
+#api-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:4px 14px;display:flex;align-items:center;justify-content:space-between;font-size:10px}
+.api-status{display:flex;align-items:center;gap:6px}
+.api-dot{width:7px;height:7px;border-radius:50%;background:var(--text3)}
+.api-dot.live{background:var(--green);box-shadow:0 0 6px var(--green)}
+.api-dot.sim{background:var(--gold)}
+.api-dot.err{background:var(--red)}
+.api-edit{color:var(--text3);cursor:pointer;font-size:10px;letter-spacing:1px;background:none;border:none;padding:0}
+.api-edit:hover{color:var(--gold)}
+#tabs{display:flex;background:var(--bg2);border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none}
+#tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;padding:9px 13px;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;color:var(--text3);font-size:11px;letter-spacing:1px;white-space:nowrap;transition:all .2s}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold)}
+.panel{display:none;padding:12px 11px 60px}
+.panel.active{display:block}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:11px;align-items:flex-end}
+label{font-size:10px;color:var(--text2);letter-spacing:1px;display:block;margin-bottom:3px}
+select,input[type=number]{background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:7px 9px;border-radius:4px;-webkit-appearance:none;appearance:none}
+input[type=text]{background:var(--bg3);border:1px solid var(--border2);color:var(--text);font-size:12px;padding:7px 9px;border-radius:4px;}
+select:focus,input:focus{outline:none;border-color:var(--gold)}
+.btn{font-size:10px;letter-spacing:2px;background:linear-gradient(135deg,#2a1f04,#3a2d06);color:var(--gold);border:1px solid rgba(245,200,66,.35);padding:8px 15px;cursor:pointer;border-radius:3px;white-space:nowrap}
+.btn:hover{background:rgba(245,200,66,.15)}
+#sigbox{border-radius:6px;padding:12px;margin-bottom:11px;border:1px solid var(--border2);background:var(--bg2)}
+.smain{display:flex;align-items:center;gap:12px;margin-bottom:9px}
+.sicon{font-size:40px;line-height:1}
+.up{color:var(--green)}.dn{color:var(--red)}.nt{color:var(--gold)}
+.sprice{font-size:20px;font-weight:700}
+.schg{font-size:11px;margin-top:2px}
+.rtrig{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.rp{font-size:10px;padding:2px 8px;border-radius:9px}
+.rpb{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);color:var(--green)}
+.rps{background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);color:var(--red)}
+.rpw{background:rgba(245,200,66,.1);border:1px solid rgba(245,200,66,.3);color:var(--gold)}
+.cw{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:9px;margin-bottom:9px}
+.ct{font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:7px}
+.loading-bar{text-align:center;padding:30px;color:var(--text3);font-size:11px;letter-spacing:2px}
+.spin{display:inline-block;animation:spin 1s linear infinite;margin-right:8px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.modal{position:fixed;inset:0;z-index:5000;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center}
+.modal.show{display:flex}
+.modal-box{background:var(--bg2);border:1px solid var(--border2);border-radius:8px;padding:24px;width:300px;text-align:center}
+.modal-box h3{color:var(--gold);letter-spacing:2px;font-size:13px;margin-bottom:14px}
+.modal-box p{font-size:11px;color:var(--text2);margin-bottom:14px;line-height:1.7}
+</style>
+</head>
+<body>
+
+<div id="splash">
+  <div class="sg"></div>
+  <div class="sglow"></div>
+  <div class="scont">
+    <div class="slogo">TSLA23T</div>
+    <div class="ssub">Trading Rule System &middot; v3.0</div>
+    <div class="sauth">Design by TSLA23T</div>
+    <div class="schips">
+      <span class="chip r">做空規則x13</span>
+      <span class="chip g">做多規則x13</span>
+      <span class="chip y">雙頂/雙底(BB)</span>
+      <span class="chip g">老王法則</span>
+      <span class="chip y">多空情緒</span>
+      <span class="chip r">宏觀總覽</span>
+    </div>
+    <div class="api-wrap">
+      <label>FINNHUB API KEY（選填，留空使用模擬數據）</label>
+      <input class="api-input" id="splash-apikey" type="text" placeholder="貼上你的 API Key ..."/>
+      <span class="api-note">免費申請：<a href="https://finnhub.io" target="_blank">finnhub.io</a> &nbsp;|&nbsp; 本機需用 localhost 運行</span>
+    </div>
+    <button class="sbtn" id="enterbtn">進入系統</button>
+  </div>
+</div>
+
+<div class="modal" id="api-modal">
+  <div class="modal-box">
+    <h3>更新 API KEY</h3>
+    <p>輸入你的 Finnhub API Key<br/>留空則切換回模擬數據</p>
+    <input class="api-input" id="modal-apikey" type="text" placeholder="貼上 API Key ..."/>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
+      <button class="btn" id="modal-save">儲存</button>
+      <button class="btn" style="color:var(--text3);border-color:var(--border2)" id="modal-cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <div>
+      <div class="brand">TSLA23T</div>
+      <div class="bsub">量化交易規則系統 v3.0</div>
+    </div>
+    <div>
+      <div class="ck" id="clock">--:--:--</div>
+      <div class="ckd" id="cdate">--</div>
+    </div>
+  </div>
+  
+  <div id="api-bar">
+    <div class="api-status">
+      <div class="api-dot" id="api-dot"></div>
+      <span id="api-label">模擬數據模式</span>
+    </div>
+    <button class="api-edit" id="api-edit-btn">修改 API Key</button>
+  </div>
+  
+  <div id="tabs">
+    <button class="tab active" onclick="showTab('scan',this)">訊號掃描</button>
+    <button class="tab">多空情緒（略）</button>
+    <button class="tab">宏觀市場（略）</button>
+    <button class="tab">規則手冊（略）</button>
+  </div>
+
+  <div id="panel-scan" class="panel active">
+    <div class="row">
+      <div>
+        <label>選擇股票</label>
+        <select id="sel-stock" onchange="toggleCustomStock()">
+          <option value="TSLA">TSLA - 特斯拉</option>
+          <option value="RKLB">RKLB - 火箭實驗室</option>
+          <option value="ASTS">ASTS - AST SpaceMobile</option>
+          <option value="NVDA">NVDA - 輝達</option>
+          <option value="AMD">AMD - 超微</option>
+          <option value="PLTR">PLTR - Palantir</option>
+          <option value="CUSTOM">自定義...</option>
+        </select>
+      </div>
+      <div id="custom-wrap" style="display:none">
+        <label>輸入代號</label>
+        <input id="custom-sym" type="text" placeholder="e.g. AAPL" style="width:90px;text-transform:uppercase"/>
+      </div>
+      <div>
+        <label>日數</label>
+        <select id="sel-days">
+          <option value="60">60日</option>
+          <option value="120" selected>120日</option>
+          <option value="240">240日</option>
+        </select>
+      </div>
+      <div><button class="btn" id="scan-btn">重新掃描</button></div>
+    </div>
+    <div id="sigbox"><div class="loading-bar"><span class="spin">⟳</span>載入中...</div></div>
+    <div class="cw"><div class="ct" id="ct-scan">標準 K 線日圖 (Candlestick)</div><canvas id="candle-main" height="260"></canvas></div>
+    <div class="cw"><div class="ct">RSI (14)</div><canvas id="rsi-main" height="90"></canvas></div>
+    <div class="cw"><div class="ct">MACD (12,26,9)</div><canvas id="macd-main" height="90"></canvas></div>
+  </div>
+</div>
+
+<script>
+var FINNHUB_KEY = '';
+var DATA_CACHE  = {};
+var CH = {};
+
+function destroyChart(id) { if (CH[id]) { CH[id].destroy(); delete CH[id]; } }
+
+// ═══════════════════════════════════════════
+// SIMULATED DATA (Fallback)
+// ═══════════════════════════════════════════
+var BASE = { TSLA:420, RKLB:130, ASTS:100, NVDA:132, AMD:168, PLTR:28 };
+var VOLA = { TSLA:.022, RKLB:.038, ASTS:.045, NVDA:.025, AMD:.028, PLTR:.035 };
+
+function genOHLC(sym, days) {
+  days = days || 120;
+  var seed = 0; for (var k = 0; k < sym.length; k++) seed += sym.charCodeAt(k);
+  function rnd() { seed = (seed*1664525+1013904223)&0xffffffff; return (seed>>>0)/4294967295; }
+  function rndN() { return (rnd()+rnd()+rnd()+rnd()+rnd()+rnd()-3)/3; }
+  var p = BASE[sym] || 80, v = VOLA[sym] || .025, out = [], now = new Date();
+  for (var i = days; i >= 0; i--) {
+    var d = new Date(now); d.setDate(d.getDate()-i);
+    if (d.getDay()===0||d.getDay()===6) continue;
+    var trend = Math.sin(i/30)*.002+(i<60?.003:-.001);
+    var ret = rndN()*v+trend, o = p, c = o*(1+ret);
+    var hi = Math.max(o,c)*(1+rnd()*v*.5), lo = Math.min(o,c)*(1-rnd()*v*.5);
+    out.push({ date:d.toISOString().slice(0,10), open:o, high:hi, low:lo, close:c, volume:Math.floor(100000+rnd()*500000) });
+    p = c;
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════
+// FINNHUB FETCH DATA
+// ═══════════════════════════════════════════
+function fetchFinnhub(sym, days, callback) {
+  if (!FINNHUB_KEY) { callback(null, 'NO_KEY'); return; }
+  var cacheKey = sym+'_'+days;
+  if (DATA_CACHE[cacheKey] && (Date.now()-DATA_CACHE[cacheKey].ts < 600000)) {
+    callback(DATA_CACHE[cacheKey].data, null); return;
+  }
+  var toTs  = Math.floor(Date.now()/1000);
+  var fromTs = toTs - (days + 30)*86400; // 多拉取些資料防止假日缺檔
+  var url = 'https://finnhub.io/api/v1/stock/candle?symbol='+encodeURIComponent(sym.toUpperCase())+'&resolution=D&from='+fromTs+'&to='+toTs+'&token='+FINNHUB_KEY;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(json => {
+      if (!json || json.s === 'no_data' || !json.t) { callback(null, 'NO_DATA'); return; }
+      var out = [];
+      for (var i = 0; i < json.t.length; i++) {
+        var dt = new Date(json.t[i]*1000);
+        out.push({
+          date: dt.toISOString().slice(0,10),
+          open: json.o[i], high: json.h[i], low: json.l[i], close: json.c[i], volume: json.v[i]
+        });
+      }
+      if (out.length > days) out = out.slice(out.length - days);
+      DATA_CACHE[cacheKey] = { data:out, ts:Date.now() };
+      callback(out, null);
+    })
+    .catch(e => callback(null, 'FETCH_ERR: ' + e.message));
+}
+
+function loadData(sym, days, callback) {
+  if (!FINNHUB_KEY) { callback(genOHLC(sym, days), 'sim'); return; }
+  setApiStatus('loading');
+  fetchFinnhub(sym, days, function(data, err) {
+    if (err || !data) {
+      setApiStatus('err', err);
+      callback(genOHLC(sym, days), 'sim');
+    } else {
+      setApiStatus('live');
+      callback(data, 'live');
+    }
+  });
+}
+
+function setApiStatus(state, msg) {
+  var dot = document.getElementById('api-dot');
+  var label = document.getElementById('api-label');
+  if (state === 'live') { dot.className='api-dot live'; label.style.color='var(--green)'; label.textContent='● Finnhub 串接成功 (真實數據)'; }
+  else if (state === 'err') { dot.className='api-dot err'; label.style.color='var(--red)'; label.textContent='● API 錯誤：' + msg + ' (載入模擬數據)'; }
+  else if (state === 'loading') { dot.className='api-dot'; label.style.color='var(--text3)'; label.textContent='⟳ 正在調取 Finnhub API 雲端數據...'; }
+  else { dot.className='api-dot sim'; label.style.color='var(--gold)'; label.textContent='● 模擬數據模式 (未偵測到密鑰)'; }
+}
+
+// ═══════════════════════════════════════════
+// TECHNICAL INDICATORS
+// ═══════════════════════════════════════════
+function ema(a,n){var k=2/(n+1);return a.reduce((o,v,i)=>(o.push(i===0?v:v*k+o[i-1]*(1-k)),o),[]);}
+function calcRSI(cl,n){
+  n=n||14; var out=[],ag=0,al=0;
+  for(var i=1;i<cl.length;i++){
+    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0?-d:0;
+    if(i<=n){ ag+=g/n; al+=l/n; out.push(NaN); }
+    else{ ag=(ag*(n-1)+g)/n; al=(al*(n-1)+l)/n; out.push(al===0?100:100-100/(1+ag/al)); }
+  }
+  out.unshift(NaN); return out;
+}
+function calcMACD(cl){
+  var f=ema(cl,12), s=ema(cl,26);
+  var dif=f.map((v,i)=>v-s[i]), dea=ema(dif,9);
+  return { dif:dif, dea:dea, hist:dif.map((v,i)=>v-dea[i]) };
+}
+
+// ═══════════════════════════════════════════
+// CORE PLOT & SCAN LOGIC
+// ═══════════════════════════════════════════
+function doScan() {
+  var stock = document.getElementById('sel-stock').value;
+  if(stock === 'CUSTOM') stock = document.getElementById('custom-sym').value.toUpperCase() || 'TSLA';
+  var days = parseInt(document.getElementById('sel-days').value);
+  
+  loadData(stock, days, function(data, mode) {
+    var closes = data.map(d => d.close);
+    var labels = data.map(d => d.date);
+    
+    // 頂部資訊看板
+    var curP = closes[closes.length-1], preP = closes[closes.length-2];
+    var chg = ((curP - preP)/preP*100).toFixed(2);
+    document.getElementById('sigbox').innerHTML = `
+      <div class="smain">
+        <div class="sicon ${chg>=0?'up':'dn'}">${chg>=0?'▲':'▼'}</div>
+        <div>
+          <div class="sprice">${stock} : $${curP.toFixed(2)}</div>
+          <div class="schg ${chg>=0?'up':'dn'}">${chg}% (當前K線報價)</div>
+        </div>
+      </div>
+    `;
+
+    // 1. 繪製標準日級別 K 線蠟燭圖 (Candlestick)
+    destroyChart('main');
+    var candleData = data.map(d => ({ x: luxon.DateTime.fromISO(d.date).valueOf(), o: d.open, h: d.high, l: d.low, c: d.close }));
+    
+    CH['main'] = new Chart(document.getElementById('candle-main').getContext('2d'), {
+      type: 'candlestick',
+      data: { datasets: [{
+        label: stock + ' 歷史日K線',
+        data: candleData,
+        color: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }, // 綠漲紅跌符合美股規範
+        borderColor: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, grid: { color: '#162436' }, ticks: { color: '#8aafcc' } },
+          y: { grid: { color: '#162436' }, ticks: { color: '#8aafcc' } }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // 2. RSI 圖表
+    destroyChart('rsi');
+    CH['rsi'] = new Chart(document.getElementById('rsi-main'), {
+      type: 'line',
+      data: { labels: labels, datasets: [{ data: calcRSI(closes, 14), borderColor: '#00b0ff', borderWidth: 1.5, pointRadius: 0, fill: false }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { display: false }, y: { min: 10, max: 90, grid: { color: '#162436' } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // 3. MACD 圖表
+    destroyChart('macd');
+    var m = calcMACD(closes);
+    CH['macd'] = new Chart(document.getElementById('macd-main'), {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: m.hist, backgroundColor: m.hist.map(v => v>=0?'#00e676':'#ff1744'), barPercentage: 0.7 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { display: false }, y: { grid: { color: '#162436' } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  });
+}
+
+// ═══════════════════════════════════════════
+// UI CONTROLS & INIT
+// ═══════════════════════════════════════════
+document.getElementById('enterbtn').onclick = function() {
+  FINNHUB_KEY = document.getElementById('splash-apikey').value.trim();
+  document.getElementById('splash').classList.add('out');
+  document.getElementById('app').classList.add('show');
+  doScan();
+};
+document.getElementById('scan-btn').onclick = doScan;
+function toggleCustomStock() { document.getElementById('custom-wrap').style.display = document.getElementById('sel-stock').value === 'CUSTOM' ? 'block' : 'none'; }
+function showTab(id, btn) { console.log("Tab切換:", id); }
+
+document.getElementById('api-edit-btn').onclick = function() { document.getElementById('api-modal').classList.add('show'); };
+document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('show'); };
+document.getElementById('modal-save').onclick = function() {
+  FINNHUB_KEY = document.getElementById('modal-apikey').value.trim();
+  document.getElementById('api-modal').classList.remove('show');
+  doScan();
+};
+
+setInterval(() => {
+  var n = new Date();
+  document.getElementById('clock').textContent = n.toTimeString().split(' ')[0];
+  document.getElementById('cdate').textContent = n.toLocaleDateString();
+}, 1000);
+</script>
+</body>
+</html>
