@@ -3,12 +3,13 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>TSLA23T 交易規則系統 v3 (K線修復版)</title>
+<title>TSLA23T 交易規則系統 v3 (終極修復版)</title>
+
 <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.0/dist/chartjs-adapter-luxon.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial@0.2.0/dist/chartjs-chart-financial.umd.min.js"></script>
-  
+
 <style>
 :root{--bg:#03060d;--bg2:#070d1a;--bg3:#0c1525;--border:#1a2e44;--border2:#243548;--gold:#f5c842;--green:#00e676;--red:#ff1744;--blue:#00b0ff;--purple:#ce93d8;--text:#e0eaf5;--text2:#8aafcc;--text3:#3a6080}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -69,11 +70,6 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
 .up{color:var(--green)}.dn{color:var(--red)}.nt{color:var(--gold)}
 .sprice{font-size:20px;font-weight:700}
 .schg{font-size:11px;margin-top:2px}
-.rtrig{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-.rp{font-size:10px;padding:2px 8px;border-radius:9px}
-.rpb{background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.3);color:var(--green)}
-.rps{background:rgba(255,23,68,.1);border:1px solid rgba(255,23,68,.3);color:var(--red)}
-.rpw{background:rgba(245,200,66,.1);border:1px solid rgba(245,200,66,.3);color:var(--gold)}
 .cw{background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:9px;margin-bottom:9px}
 .ct{font-size:9px;color:var(--text3);letter-spacing:2px;margin-bottom:7px}
 .loading-bar{text-align:center;padding:30px;color:var(--text3);font-size:11px;letter-spacing:2px}
@@ -106,7 +102,7 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
     <div class="api-wrap">
       <label>FINNHUB API KEY（選填，留空使用模擬數據）</label>
       <input class="api-input" id="splash-apikey" type="text" placeholder="貼上你的 API Key ..."/>
-      <span class="api-note">免費申請：<a href="https://finnhub.io" target="_blank">finnhub.io</a> &nbsp;|&nbsp; 本機需用 localhost 運行</span>
+      <span class="api-note">免費申請：<a href="https://finnhub.io" target="_blank">finnhub.io</a></span>
     </div>
     <button class="sbtn" id="enterbtn">進入系統</button>
   </div>
@@ -187,16 +183,28 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
 </div>
 
 <script>
-  // 【核心修復】手動將金融圖表插件（K線、美國線）註冊到 Chart.js 核心中
+// 【修復 1】手動向 Chart.js 核心註冊金融圖表模組。如果漏掉這行，呼叫 'candlestick' 時核心必定崩潰。
 Chart.register(CandlestickController, OhlcController, CandlestickElement, OhlcElement);
+
 var FINNHUB_KEY = '';
 var DATA_CACHE  = {};
-var CH = {};
 
-function destroyChart(id) { if (CH[id]) { CH[id].destroy(); delete CH[id]; } }
+// 【修復 2】建立一個乾淨、集中式的畫布重置函數。在建立任何新圖表前，必須徹底消滅舊實例。
+function cleanAllCharts() {
+  ['candle-main', 'rsi-main', 'macd-main'].forEach(id => {
+    try {
+      var chartInstance = Chart.getChart(id);
+      if (chartInstance) {
+        chartInstance.destroy();
+      }
+    } catch (e) {
+      console.warn("清理畫布時發生非致命異常: ", e);
+    }
+  });
+}
 
 // ═══════════════════════════════════════════
-// SIMULATED DATA (Fallback)
+// DATA GENERATOR (FALLBACK)
 // ═══════════════════════════════════════════
 var BASE = { TSLA:420, RKLB:130, ASTS:100, NVDA:132, AMD:168, PLTR:28 };
 var VOLA = { TSLA:.022, RKLB:.038, ASTS:.045, NVDA:.025, AMD:.028, PLTR:.035 };
@@ -220,7 +228,7 @@ function genOHLC(sym, days) {
 }
 
 // ═══════════════════════════════════════════
-// FINNHUB FETCH DATA
+// FINNHUB API INTEGRATION
 // ═══════════════════════════════════════════
 function fetchFinnhub(sym, days, callback) {
   if (!FINNHUB_KEY) { callback(null, 'NO_KEY'); return; }
@@ -229,13 +237,13 @@ function fetchFinnhub(sym, days, callback) {
     callback(DATA_CACHE[cacheKey].data, null); return;
   }
   var toTs  = Math.floor(Date.now()/1000);
-  var fromTs = toTs - (days + 30)*86400; // 多拉取些資料防止假日缺檔
+  var fromTs = toTs - (days + 30)*86400; 
   var url = 'https://finnhub.io/api/v1/stock/candle?symbol='+encodeURIComponent(sym.toUpperCase())+'&resolution=D&from='+fromTs+'&to='+toTs+'&token='+FINNHUB_KEY;
 
   fetch(url)
     .then(r => r.json())
     .then(json => {
-      if (!json || json.s === 'no_data' || !json.t) { callback(null, 'NO_DATA'); return; }
+      if (!json || json.s === 'no_data' || !json.t) { callback(null, '此代號無即時數據(或API流量限制)'); return; }
       var out = [];
       for (var i = 0; i < json.t.length; i++) {
         var dt = new Date(json.t[i]*1000);
@@ -248,11 +256,15 @@ function fetchFinnhub(sym, days, callback) {
       DATA_CACHE[cacheKey] = { data:out, ts:Date.now() };
       callback(out, null);
     })
-    .catch(e => callback(null, 'FETCH_ERR: ' + e.message));
+    .catch(e => callback(null, '網絡傳輸錯誤: ' + e.message));
 }
 
 function loadData(sym, days, callback) {
-  if (!FINNHUB_KEY) { callback(genOHLC(sym, days), 'sim'); return; }
+  if (!FINNHUB_KEY) { 
+    setApiStatus('sim');
+    callback(genOHLC(sym, days), 'sim'); 
+    return; 
+  }
   setApiStatus('loading');
   fetchFinnhub(sym, days, function(data, err) {
     if (err || !data) {
@@ -268,9 +280,9 @@ function loadData(sym, days, callback) {
 function setApiStatus(state, msg) {
   var dot = document.getElementById('api-dot');
   var label = document.getElementById('api-label');
-  if (state === 'live') { dot.className='api-dot live'; label.style.color='var(--green)'; label.textContent='● Finnhub 串接成功 (真實數據)'; }
-  else if (state === 'err') { dot.className='api-dot err'; label.style.color='var(--red)'; label.textContent='● API 錯誤：' + msg + ' (載入模擬數據)'; }
-  else if (state === 'loading') { dot.className='api-dot'; label.style.color='var(--text3)'; label.textContent='⟳ 正在調取 Finnhub API 雲端數據...'; }
+  if (state === 'live') { dot.className='api-dot live'; label.style.color='var(--green)'; label.textContent='● Finnhub 數據串接成功'; }
+  else if (state === 'err') { dot.className='api-dot err'; label.style.color='var(--red)'; label.textContent='● API 調取失敗 (' + msg + ') | 切換回本地模擬數據'; }
+  else if (state === 'loading') { dot.className='api-dot'; label.style.color='var(--text3)'; label.textContent='⟳ 正在調取 Finnhub 雲端實時數據...'; }
   else { dot.className='api-dot sim'; label.style.color='var(--gold)'; label.textContent='● 模擬數據模式 (未偵測到密鑰)'; }
 }
 
@@ -281,7 +293,7 @@ function ema(a,n){var k=2/(n+1);return a.reduce((o,v,i)=>(o.push(i===0?v:v*k+o[i
 function calcRSI(cl,n){
   n=n||14; var out=[],ag=0,al=0;
   for(var i=1;i<cl.length;i++){
-    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0?-d:0;
+    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0&-d:0;
     if(i<=n){ ag+=g/n; al+=l/n; out.push(NaN); }
     else{ ag=(ag*(n-1)+g)/n; al=(al*(n-1)+l)/n; out.push(al===0?100:100-100/(1+ag/al)); }
   }
@@ -301,25 +313,19 @@ function doScan() {
   if(stock === 'CUSTOM') stock = document.getElementById('custom-sym').value.toUpperCase() || 'TSLA';
   var days = parseInt(document.getElementById('sel-days').value);
   
-  // 【超前防禦】在發送 API 請求「之前」，立刻強制銷毀當前畫布上的所有舊圖表實例
-  var existingChart = Chart.getChart("candle-main"); if (existingChart) { existingChart.destroy(); }
-  var existingRsi   = Chart.getChart("rsi-main");    if (existingRsi)   { existingRsi.destroy(); }
-  var existingMacd  = Chart.getChart("macd-main");   if (existingMacd)  { existingMacd.destroy(); }
+  // 【修復 3】在向 Finnhub 發送任何異步網絡請求之前，立刻清除舊圖表，徹底打破異步併發死鎖。
+  cleanAllCharts();
 
-  // 顯示載入中動畫（防止使用者連續點擊）
   document.getElementById('sigbox').innerHTML = `<div class="loading-bar"><span class="spin">⟳</span>正在調取 ${stock} 數據中...</div>`;
 
-  // 開始讀取資料（Finnhub API 或模擬數據）
   loadData(stock, days, function(data, mode) {
-    // 再次確保安全：資料回傳的瞬間再清一次，雙重保險
-    var reCheckChart = Chart.getChart("candle-main"); if (reCheckChart) { reCheckChart.destroy(); }
-    var reCheckRsi   = Chart.getChart("rsi-main");    if (reCheckRsi)   { reCheckRsi.destroy(); }
-    var reCheckMacd  = Chart.getChart("macd-main");   if (reCheckMacd)  { reCheckMacd.destroy(); }
+    // 【修復 4】當數據回傳的瞬間，再次強制覆寫、清除一次畫布，形成雙重安全鎖。
+    cleanAllCharts();
 
     var closes = data.map(d => d.close);
     var labels = data.map(d => d.date);
     
-    // 更新頂部資訊看板
+    // 更新資訊看板
     var curP = closes[closes.length-1], preP = closes[closes.length-2];
     var chg = ((curP - preP)/preP*100).toFixed(2);
     document.getElementById('sigbox').innerHTML = `
@@ -338,7 +344,7 @@ function doScan() {
       o: d.open, h: d.high, l: d.low, c: d.close 
     }));
     
-    CH['main'] = new Chart(document.getElementById('candle-main').getContext('2d'), {
+    new Chart(document.getElementById('candle-main').getContext('2d'), {
       type: 'candlestick',
       data: { datasets: [{
         label: stock + ' 歷史日K線',
@@ -357,7 +363,7 @@ function doScan() {
     });
 
     // 2. RSI 圖表
-    CH['rsi'] = new Chart(document.getElementById('rsi-main'), {
+    new Chart(document.getElementById('rsi-main').getContext('2d'), {
       type: 'line',
       data: { labels: labels, datasets: [{ data: calcRSI(closes, 14), borderColor: '#00b0ff', borderWidth: 1.5, pointRadius: 0, fill: false }] },
       options: {
@@ -369,7 +375,7 @@ function doScan() {
 
     // 3. MACD 圖表
     var m = calcMACD(closes);
-    CH['macd'] = new Chart(document.getElementById('macd-main'), {
+    new Chart(document.getElementById('macd-main').getContext('2d'), {
       type: 'bar',
       data: { labels: labels, datasets: [{ data: m.hist, backgroundColor: m.hist.map(v => v>=0?'#00e676':'#ff1744'), barPercentage: 0.7 }] },
       options: {
@@ -382,7 +388,7 @@ function doScan() {
 }
 
 // ═══════════════════════════════════════════
-// UI CONTROLS & INIT
+// UI CONTROLS & INITIALIZATION
 // ═══════════════════════════════════════════
 document.getElementById('enterbtn').onclick = function() {
   FINNHUB_KEY = document.getElementById('splash-apikey').value.trim();
@@ -390,12 +396,13 @@ document.getElementById('enterbtn').onclick = function() {
   document.getElementById('app').classList.add('show');
   doScan();
 };
+
 document.getElementById('scan-btn').onclick = doScan;
 function toggleCustomStock() { document.getElementById('custom-wrap').style.display = document.getElementById('sel-stock').value === 'CUSTOM' ? 'block' : 'none'; }
-function showTab(id, btn) { console.log("Tab切換:", id); }
+function showTab(id, btn) {}
 
 document.getElementById('api-edit-btn').onclick = function() { document.getElementById('api-modal').classList.add('show'); };
-document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('show'); };
+document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('remove'); document.getElementById('api-modal').classList.remove('show'); };
 document.getElementById('modal-save').onclick = function() {
   FINNHUB_KEY = document.getElementById('modal-apikey').value.trim();
   document.getElementById('api-modal').classList.remove('show');
