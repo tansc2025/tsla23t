@@ -1,0 +1,2 @@
+function calcMACD(cl){
+  var ef=ema(cl,12)＿  // <--- 這裡使用了錯誤的符號，且函數沒有寫完
