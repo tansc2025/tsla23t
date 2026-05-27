@@ -89,4 +89,332 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
   <div class="sglow"></div>
   <div class="scont">
     <div class="slogo">TSLA23T</div>
-    <div class="ssub">Trading Rule System &middot; v
+    <div class="ssub">Trading Rule System &middot; v3.0</div>
+    <div class="sauth">Design by TSLA23T</div>
+    <div class="schips">
+      <span class="chip r">做空規則x13</span>
+      <span class="chip g">做多規則x13</span>
+      <span class="chip y">雙頂/雙底(BB)</span>
+      <span class="chip g">老王法則</span>
+      <span class="chip y">多空情緒</span>
+      <span class="chip r">宏觀總覽</span>
+    </div>
+    <div class="api-wrap">
+      <label>FINNHUB API KEY（選填，留空使用模擬數據）</label>
+      <input class="api-input" id="splash-apikey" type="text" placeholder="貼上你的 API Key ..."/>
+      <span class="api-note">免費申請：<a href="https://finnhub.io" target="_blank">finnhub.io</a></span>
+    </div>
+    <button class="sbtn" id="enterbtn">進入系統</button>
+  </div>
+</div>
+
+<div class="modal" id="api-modal">
+  <div class="modal-box">
+    <h3>更新 API KEY</h3>
+    <p>輸入你的 Finnhub API Key<br/>留空則切換回模擬數據</p>
+    <input class="api-input" id="modal-apikey" type="text" placeholder="貼上 API Key ..."/>
+    <div style="display:flex;gap:8px;justify-content:center;margin-top:14px">
+      <button class="btn" id="modal-save">儲存</button>
+      <button class="btn" style="color:var(--text3);border-color:var(--border2)" id="modal-cancel">取消</button>
+    </div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="topbar">
+    <div>
+      <div class="brand">TSLA23T</div>
+      <div class="bsub">量化交易規則系統 v3.0</div>
+    </div>
+    <div>
+      <div class="ck" id="clock">--:--:--</div>
+      <div class="ckd" id="cdate">--</div>
+    </div>
+  </div>
+  
+  <div id="api-bar">
+    <div class="api-status">
+      <div class="api-dot" id="api-dot"></div>
+      <span id="api-label">模擬數據模式</span>
+    </div>
+    <button class="api-edit" id="api-edit-btn">修改 API Key</button>
+  </div>
+  
+  <div id="tabs">
+    <button class="tab active" onclick="showTab('scan',this)">訊號掃描</button>
+    <button class="tab">多空情緒（略）</button>
+    <button class="tab">宏觀市場（略）</button>
+    <button class="tab">規則手冊（略）</button>
+  </div>
+
+  <div id="panel-scan" class="panel active">
+    <div class="row">
+      <div>
+        <label>選擇股票</label>
+        <select id="sel-stock" onchange="toggleCustomStock()">
+          <option value="TSLA">TSLA - 特斯拉</option>
+          <option value="RKLB">RKLB - 火箭實驗室</option>
+          <option value="ASTS">ASTS - AST SpaceMobile</option>
+          <option value="NVDA">NVDA - 輝達</option>
+          <option value="AMD">AMD - 超微</option>
+          <option value="PLTR">PLTR - Palantir</option>
+          <option value="CUSTOM">自定義...</option>
+        </select>
+      </div>
+      <div id="custom-wrap" style="display:none">
+        <label>輸入代號</label>
+        <input id="custom-sym" type="text" placeholder="e.g. AAPL" style="width:90px;text-transform:uppercase"/>
+      </div>
+      <div>
+        <label>日數</label>
+        <select id="sel-days">
+          <option value="60">60日</option>
+          <option value="120" selected>120日</option>
+          <option value="240">240日</option>
+        </select>
+      </div>
+      <div><button class="btn" id="scan-btn">重新掃描</button></div>
+    </div>
+    <div id="sigbox"><div class="loading-bar"><span class="spin">⟳</span>載入中...</div></div>
+    <div class="cw"><div class="ct" id="ct-scan">標準 K 線日圖 (Candlestick)</div><canvas id="candle-main" height="260"></canvas></div>
+    <div class="cw"><div class="ct">RSI (14)</div><canvas id="rsi-main" height="90"></canvas></div>
+    <div class="cw"><div class="ct">MACD (12,26,9)</div><canvas id="macd-main" height="90"></canvas></div>
+  </div>
+</div>
+
+<script>
+var FINNHUB_KEY = '';
+var DATA_CACHE  = {};
+var CHART_MAP = {}; // 用於追蹤和安全釋放圖表實例
+
+// 集中清理舊圖表的防禦函數
+function cleanChartInstance(key) {
+  if (CHART_MAP[key]) {
+    try {
+      CHART_MAP[key].destroy();
+    } catch(e) {
+      console.warn("釋放圖表異常:", e);
+    }
+    CHART_MAP[key] = null;
+  }
+}
+
+// ═══════════════════════════════════════════
+// DATA GENERATOR (FALLBACK)
+// ═══════════════════════════════════════════
+var BASE = { TSLA:420, RKLB:130, ASTS:100, NVDA:132, AMD:168, PLTR:28 };
+var VOLA = { TSLA:.022, RKLB:.038, ASTS:.045, NVDA:.025, AMD:.028, PLTR:.035 };
+
+function genOHLC(sym, days) {
+  days = days || 120;
+  var seed = 0; for (var k = 0; k < sym.length; k++) seed += sym.charCodeAt(k);
+  function rnd() { seed = (seed*1664525+1013904223)&0xffffffff; return (seed>>>0)/4294967295; }
+  function rndN() { return (rnd()+rnd()+rnd()+rnd()+rnd()+rnd()-3)/3; }
+  var p = BASE[sym] || 80, v = VOLA[sym] || .025, out = [], now = new Date();
+  for (var i = days; i >= 0; i--) {
+    var d = new Date(now); d.setDate(d.getDate()-i);
+    if (d.getDay()===0||d.getDay()===6) continue;
+    var trend = Math.sin(i/30)*.002+(i<60?.003:-.001);
+    var ret = rndN()*v+trend, o = p, c = o*(1+ret);
+    var hi = Math.max(o,c)*(1+rnd()*v*.5), lo = Math.min(o,c)*(1-rnd()*v*.5);
+    out.push({ date:d.toISOString().slice(0,10), open:o, high:hi, low:lo, close:c, volume:Math.floor(100000+rnd()*500000) });
+    p = c;
+  }
+  return out;
+}
+
+// ═══════════════════════════════════════════
+// FINNHUB API INTEGRATION
+// ═══════════════════════════════════════════
+function fetchFinnhub(sym, days, callback) {
+  if (!FINNHUB_KEY) { callback(null, 'NO_KEY'); return; }
+  var cacheKey = sym+'_'+days;
+  if (DATA_CACHE[cacheKey] && (Date.now()-DATA_CACHE[cacheKey].ts < 600000)) {
+    callback(DATA_CACHE[cacheKey].data, null); return;
+  }
+  var toTs  = Math.floor(Date.now()/1000);
+  var fromTs = toTs - (days + 30)*86400; 
+  var url = 'https://finnhub.io/api/v1/stock/candle?symbol='+encodeURIComponent(sym.toUpperCase())+'&resolution=D&from='+fromTs+'&to='+toTs+'&token='+FINNHUB_KEY;
+
+  fetch(url)
+    .then(r => r.json())
+    .then(json => {
+      if (!json || json.s === 'no_data' || !json.t) { callback(null, '網路受限或無數據'); return; }
+      var out = [];
+      for (var i = 0; i < json.t.length; i++) {
+        var dt = new Date(json.t[i]*1000);
+        out.push({
+          date: dt.toISOString().slice(0,10),
+          open: json.o[i], high: json.h[i], low: json.l[i], close: json.c[i], volume: json.v[i]
+        });
+      }
+      if (out.length > days) out = out.slice(out.length - days);
+      DATA_CACHE[cacheKey] = { data:out, ts:Date.now() };
+      callback(out, null);
+    })
+    .catch(e => callback(null, e.message));
+}
+
+function loadData(sym, days, callback) {
+  if (!FINNHUB_KEY) { 
+    setApiStatus('sim');
+    callback(genOHLC(sym, days), 'sim'); 
+    return; 
+  }
+  setApiStatus('loading');
+  fetchFinnhub(sym, days, function(data, err) {
+    if (err || !data) {
+      setApiStatus('err', err);
+      callback(genOHLC(sym, days), 'sim');
+    } else {
+      setApiStatus('live');
+      callback(data, 'live');
+    }
+  });
+}
+
+function setApiStatus(state, msg) {
+  var dot = document.getElementById('api-dot');
+  var label = document.getElementById('api-label');
+  if (state === 'live') { dot.className='api-dot live'; label.style.color='var(--green)'; label.textContent='● Finnhub 數據串接成功'; }
+  else if (state === 'err') { dot.className='api-dot err'; label.style.color='var(--red)'; label.textContent='● API 調取失敗 (' + msg + ') | 自動切換為本地數據'; }
+  else if (state === 'loading') { dot.className='api-dot'; label.style.color='var(--text3)'; label.textContent='⟳ 正在調取 Finnhub 雲端實時數據...'; }
+  else { dot.className='api-dot sim'; label.style.color='var(--gold)'; label.textContent='● 模擬數據模式 (未偵測到密鑰)'; }
+}
+
+// ═══════════════════════════════════════════
+// TECHNICAL INDICATORS
+// ═══════════════════════════════════════════
+function ema(a,n){var k=2/(n+1);return a.reduce((o,v,i)=>(o.push(i===0?v:v*k+o[i-1]*(1-k)),o),[]);}
+function calcRSI(cl,n){
+  n=n||14; var out=[],ag=0,al=0;
+  for(var i=1;i<cl.length;i++){
+    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0?-d:0;
+    if(i<=n){ ag+=g/n; al+=l/n; out.push(NaN); }
+    else{ ag=(ag*(n-1)+g)/n; al=(al*(n-1)+l)/n; out.push(al===0?100:100-100/(1+ag/al)); }
+  }
+  out.unshift(NaN); return out;
+}
+function calcMACD(cl){
+  var f=ema(cl,12), s=ema(cl,26);
+  var dif=f.map((v,i)=>v-s[i]), dea=ema(dif,9);
+  return { dif:dif, dea:dea, hist:dif.map((v,i)=>v-dea[i]) };
+}
+
+// ═══════════════════════════════════════════
+// CORE PLOT & SCAN LOGIC
+// ═══════════════════════════════════════════
+function doScan() {
+  var stock = document.getElementById('sel-stock').value;
+  if(stock === 'CUSTOM') stock = document.getElementById('custom-sym').value.toUpperCase() || 'TSLA';
+  var days = parseInt(document.getElementById('sel-days').value);
+  
+  // 在發送請求前徹底清除所有舊圖表實例
+  cleanChartInstance('main');
+  cleanChartInstance('rsi');
+  cleanChartInstance('macd');
+
+  document.getElementById('sigbox').innerHTML = `<div class="loading-bar"><span class="spin">⟳</span>正在調取 ${stock} 數據中...</div>`;
+
+  loadData(stock, days, function(data, mode) {
+    // 數據回傳時，再次執行雙重安全清理
+    cleanChartInstance('main');
+    cleanChartInstance('rsi');
+    cleanChartInstance('macd');
+
+    var closes = data.map(d => d.close);
+    var labels = data.map(d => d.date);
+    
+    var curP = closes[closes.length-1], preP = closes[closes.length-2];
+    var chg = ((curP - preP)/preP*100).toFixed(2);
+    document.getElementById('sigbox').innerHTML = `
+      <div class="smain">
+        <div class="sicon ${chg>=0?'up':'dn'}">${chg>=0?'▲':'▼'}</div>
+        <div>
+          <div class="sprice">${stock} : $${curP.toFixed(2)}</div>
+          <div class="schg ${chg>=0?'up':'dn'}">${chg}% (當前K線報價)</div>
+        </div>
+      </div>
+    `;
+
+    // 1. 繪製標準日級別 K 線蠟燭圖 (Candlestick)
+    var candleData = data.map(d => ({ 
+      t: luxon.DateTime.fromISO(d.date).valueOf(), // 在 Chart.js v3 中，時間屬性鍵名是 t，而不是 x
+      o: d.open, h: d.high, l: d.low, c: d.close 
+    }));
+    
+    var ctxMain = document.getElementById('candle-main').getContext('2d');
+    CHART_MAP['main'] = new Chart(ctxMain, {
+      type: 'candlestick',
+      data: { datasets: [{
+        label: stock + ' 歷史日K線',
+        data: candleData,
+        borderColor: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }
+      }]},
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: {
+          x: { type: 'time', time: { unit: 'day', displayFormats: { day: 'MM-dd' } }, grid: { color: '#162436' }, ticks: { color: '#8aafcc' } },
+          y: { grid: { color: '#162436' }, ticks: { color: '#8aafcc' } }
+        },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // 2. RSI 圖表
+    var ctxRsi = document.getElementById('rsi-main').getContext('2d');
+    CHART_MAP['rsi'] = new Chart(ctxRsi, {
+      type: 'line',
+      data: { labels: labels, datasets: [{ data: calcRSI(closes, 14), borderColor: '#00b0ff', borderWidth: 1.5, pointRadius: 0, fill: false }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { display: false }, y: { min: 10, max: 90, grid: { color: '#162436' } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+
+    // 3. MACD 圖表
+    var m = calcMACD(closes);
+    var ctxMacd = document.getElementById('macd-main').getContext('2d');
+    CHART_MAP['macd'] = new Chart(ctxMacd, {
+      type: 'bar',
+      data: { labels: labels, datasets: [{ data: m.hist, backgroundColor: m.hist.map(v => v>=0?'#00e676':'#ff1744'), barPercentage: 0.7 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        scales: { x: { display: false }, y: { grid: { color: '#162436' } } },
+        plugins: { legend: { display: false } }
+      }
+    });
+  });
+}
+
+// ═══════════════════════════════════════════
+// UI CONTROLS & INITIALIZATION
+// ═══════════════════════════════════════════
+document.getElementById('enterbtn').onclick = function() {
+  FINNHUB_KEY = document.getElementById('splash-apikey').value.trim();
+  document.getElementById('splash').classList.add('out');
+  document.getElementById('app').classList.add('show');
+  doScan();
+};
+
+document.getElementById('scan-btn').onclick = doScan;
+function toggleCustomStock() { document.getElementById('custom-wrap').style.display = document.getElementById('sel-stock').value === 'CUSTOM' ? 'block' : 'none'; }
+function showTab(id, btn) {}
+
+document.getElementById('api-edit-btn').onclick = function() { document.getElementById('api-modal').classList.add('show'); };
+document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('show'); };
+document.getElementById('modal-save').onclick = function() {
+  FINNHUB_KEY = document.getElementById('modal-apikey').value.trim();
+  document.getElementById('api-modal').classList.remove('show');
+  doScan();
+};
+
+setInterval(() => {
+  var n = new Date();
+  document.getElementById('clock').textContent = n.toTimeString().split(' ')[0];
+  document.getElementById('cdate').textContent = n.toLocaleDateString();
+}, 1000);
+</script>
+</body>
+</html>
