@@ -183,13 +183,20 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
 </div>
 
 <script>
-// 【修復 1】手動向 Chart.js 核心註冊金融圖表模組。如果漏掉這行，呼叫 'candlestick' 時核心必定崩潰。
-Chart.register(CandlestickController, OhlcController, CandlestickElement, OhlcElement);
+// 【修復 1】修正為 UMD CDN 版本的正確全域物件路徑註冊方式，防止載入時引擎崩潰
+if (window['chartjs-chart-financial']) {
+  Chart.register(
+    window['chartjs-chart-financial'].CandlestickController, 
+    window['chartjs-chart-financial'].OhlcController, 
+    window['chartjs-chart-financial'].CandlestickElement, 
+    window['chartjs-chart-financial'].OhlcElement
+  );
+}
 
 var FINNHUB_KEY = '';
 var DATA_CACHE  = {};
 
-// 【修復 2】建立一個乾淨、集中式的畫布重置函數。在建立任何新圖表前，必須徹底消滅舊實例。
+// 集中式的畫布重置函數
 function cleanAllCharts() {
   ['candle-main', 'rsi-main', 'macd-main'].forEach(id => {
     try {
@@ -198,7 +205,7 @@ function cleanAllCharts() {
         chartInstance.destroy();
       }
     } catch (e) {
-      console.warn("清理畫布時發生非致命異常: ", e);
+      console.warn("清理畫布變量異常: ", e);
     }
   });
 }
@@ -293,7 +300,7 @@ function ema(a,n){var k=2/(n+1);return a.reduce((o,v,i)=>(o.push(i===0?v:v*k+o[i
 function calcRSI(cl,n){
   n=n||14; var out=[],ag=0,al=0;
   for(var i=1;i<cl.length;i++){
-    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0&-d:0;
+    var d=cl[i]-cl[i-1], g=d>0?d:0, l=d<0?-d:0;
     if(i<=n){ ag+=g/n; al+=l/n; out.push(NaN); }
     else{ ag=(ag*(n-1)+g)/n; al=(al*(n-1)+l)/n; out.push(al===0?100:100-100/(1+ag/al)); }
   }
@@ -313,19 +320,15 @@ function doScan() {
   if(stock === 'CUSTOM') stock = document.getElementById('custom-sym').value.toUpperCase() || 'TSLA';
   var days = parseInt(document.getElementById('sel-days').value);
   
-  // 【修復 3】在向 Finnhub 發送任何異步網絡請求之前，立刻清除舊圖表，徹底打破異步併發死鎖。
   cleanAllCharts();
-
   document.getElementById('sigbox').innerHTML = `<div class="loading-bar"><span class="spin">⟳</span>正在調取 ${stock} 數據中...</div>`;
 
   loadData(stock, days, function(data, mode) {
-    // 【修復 4】當數據回傳的瞬間，再次強制覆寫、清除一次畫布，形成雙重安全鎖。
     cleanAllCharts();
 
     var closes = data.map(d => d.close);
     var labels = data.map(d => d.date);
     
-    // 更新資訊看板
     var curP = closes[closes.length-1], preP = closes[closes.length-2];
     var chg = ((curP - preP)/preP*100).toFixed(2);
     document.getElementById('sigbox').innerHTML = `
@@ -338,7 +341,7 @@ function doScan() {
       </div>
     `;
 
-    // 1. 繪製標準日級別 K 線蠟燭圖 (Candlestick)
+    // 1. K 線圖
     var candleData = data.map(d => ({ 
       x: luxon.DateTime.fromISO(d.date).valueOf(), 
       o: d.open, h: d.high, l: d.low, c: d.close 
@@ -350,7 +353,7 @@ function doScan() {
         label: stock + ' 歷史日K線',
         data: candleData,
         color: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }, 
-        borderColor: { up: '#00e676', down: '#ff1744', unch: '#f5c842' }
+        borderColor: { up: '#00e676', down: '#ff1744', unch: '#ff1744' }
       }]},
       options: {
         responsive: true, maintainAspectRatio: false,
@@ -402,7 +405,7 @@ function toggleCustomStock() { document.getElementById('custom-wrap').style.disp
 function showTab(id, btn) {}
 
 document.getElementById('api-edit-btn').onclick = function() { document.getElementById('api-modal').classList.add('show'); };
-document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('remove'); document.getElementById('api-modal').classList.remove('show'); };
+document.getElementById('modal-cancel').onclick = function() { document.getElementById('api-modal').classList.remove('show'); };
 document.getElementById('modal-save').onclick = function() {
   FINNHUB_KEY = document.getElementById('modal-apikey').value.trim();
   document.getElementById('api-modal').classList.remove('show');
