@@ -1,7 +1,0 @@
-- name: Build App
-  env:
-    # For Create React App:
-    REACT_APP_FINNHUB_API_KEY: ${{ secrets.REACT_APP_FINNHUB_API_KEY }}
-    # For Vite:
-    VITE_FINNHUB_API_KEY: ${{ secrets.VITE_FINNHUB_API_KEY }}
-  run: npm run build
