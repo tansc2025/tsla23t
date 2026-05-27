@@ -187,6 +187,8 @@ select:focus,input:focus{outline:none;border-color:var(--gold)}
 </div>
 
 <script>
+  // 【核心修復】手動將金融圖表插件（K線、美國線）註冊到 Chart.js 核心中
+Chart.register(CandlestickController, OhlcController, CandlestickElement, OhlcElement);
 var FINNHUB_KEY = '';
 var DATA_CACHE  = {};
 var CH = {};
